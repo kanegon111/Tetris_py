@@ -43,28 +43,31 @@
             z-index: 10;
         }
 
-        /* スマホ用コントローラーボタンのグラスモルフィズムデザイン */
+        /* スマホ用コントローラーボタンのグラスモルフィズムデザイン（白グラス風） */
         .ctrl-btn {
-            background: rgba(255, 255, 255, 0.12) !important;
-            border: 1px solid rgba(255, 255, 255, 0.25) !important;
+            background: rgba(255, 255, 255, 0.08) !important;
+            border: 1px solid rgba(255, 255, 255, 0.18) !important;
             border-radius: 12px !important;
-            color: #fff !important;
-            font-size: 16px !important;
+            color: rgba(255, 255, 255, 0.75) !important;
+            font-size: 20px !important; /* タップしやすいよう少し大きめに */
             font-family: 'Impact', sans-serif;
             font-weight: bold;
-            padding: 14px 0 !important;
+            padding: 10px 0 !important;
             flex: 1;
             text-align: center;
             cursor: pointer;
             user-select: none;
             touch-action: manipulation;
             transition: all 0.1s ease;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
+            backdrop-filter: blur(4px); /* 背景の星空がぼやけて超美麗に */
+            -webkit-backdrop-filter: blur(4px);
         }
         .ctrl-btn:active {
-            background: rgba(255, 255, 255, 0.3) !important;
-            transform: scale(0.95);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            background: rgba(255, 255, 255, 0.25) !important;
+            color: #fff !important;
+            transform: scale(0.92);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
         }
     </style>
 </head>
@@ -72,22 +75,23 @@
 <body>
 
     <!-- ゲーム全体を縦に並べるコンテナ -->
-    <div id="gameWrapper" style="display: flex; flex-direction: column; align-items: center; gap: 12px; z-index: 1; max-height: 98vh;">
+    <div id="gameWrapper" style="display: flex; flex-direction: column; align-items: center; z-index: 1; max-height: 98vh; gap: 10px;">
         
         <!-- プレイ画面とスタートボタンを重ねて配置する相対コンテナ -->
-        <div style="position: relative; width: 316px; height: 616px; display: flex; justify-content: center; align-items: center;">
-            <!-- キャンバス本体を赤い太枠線（border）のラッパーで囲み、4辺すべてが確実に描画されるように調整 -->
+        <div style="position: relative; width: 276px; height: 536px; display: flex; justify-content: center; align-items: center;">
+            <!-- キャンバス本体を赤い太枠線（border）のラッパーで囲む (BLOCK_SIZE 26pxに合わせて 276x536px に縮小) -->
             <div style="border: rgb(194, 35, 35) 8px solid; border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); display: inline-block; line-height: 0; box-sizing: border-box;">
-                <canvas id="can" width="300" height="600" style="display: block;"></canvas>
+                <canvas id="can" width="260" height="520" style="display: block;"></canvas>
             </div>
 
+            <!-- スタート/リスタートボタン -->
             <div id="startContainer">
                 <button id="startButton">Start Game</button>
             </div>
         </div>
 
-        <!-- スマホ用バーチャルコントローラー（タップ回転のためROTATEボタンを削除） -->
-        <div id="mobileController" style="display: flex; justify-content: space-between; width: 300px; gap: 10px; margin-top: 6px;">
+        <!-- スマホ用バーチャルコントローラー（枠の外側・下部に配置して画面と被らないように） -->
+        <div id="mobileController" style="display: flex; justify-content: space-between; width: 260px; gap: 10px; margin-top: 2px;">
             <button id="btnLeft" class="ctrl-btn">◀</button>
             <button id="btnDown" class="ctrl-btn">▼</button>
             <button id="btnRight" class="ctrl-btn">▶</button>
@@ -113,8 +117,8 @@ GAME_SPEED = 500
 FIELD_COL = 10
 FIELD_ROW = 20
 
-# ブロック一つのサイズ(ピクセル)
-BLOCK_SIZE = 30
+# ブロック一つのサイズ(ピクセル) (スマホ画面に収まるよう30pxから26pxに少し縮小)
+BLOCK_SIZE = 26
 
 # スクリーンサイズ
 SCREEN_W = BLOCK_SIZE * FIELD_COL
@@ -519,18 +523,21 @@ def setup():
     start_proxy = create_proxy(startGame)
     start_btn.addEventListener("click", start_proxy)
     
-    # スマホ用ボタンのクリック/タップイベント
+    # スマホ用ボタンのクリック/タップイベント (stopPropagationでキャンバスのタップ回転イベントとの干渉を防ぐ)
     def clickLeft(e):
+        e.stopPropagation()
         global tetro_x
         if not over and checkMove(-1, 0):
             tetro_x -= 1
             
     def clickRight(e):
+        e.stopPropagation()
         global tetro_x
         if not over and checkMove(1, 0):
             tetro_x += 1
             
     def clickDown(e):
+        e.stopPropagation()
         global tetro_y
         if not over and checkMove(0, 1):
             tetro_y += 1
