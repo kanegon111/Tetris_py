@@ -1,0 +1,50 @@
+
+body,
+html {
+  margin-top: 300px;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  height: 600px;
+  background-color: #000;
+  overflow: hidden;
+  border: rgb(194, 35, 35) 8px solid;
+}
+
+#startContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* ボタンスタイル */
+#startButton {
+  padding: 15px 40px;
+  font-size: 24px;
+  font-family: 'Impact', sans-serif;
+  color: #fff;
+  background-color: #0077ff;
+  border: none;
+  border-radius: 5px;
+  box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+/* ホバー時のスタイル */
+#startButton:hover {
+  background-color: #0056b3;
+  box-shadow: 0 6px 20px rgba(0, 123, 255, 0.5);
+  transform: scale(1.05);
+}
+
+/* クリック時のスタイル */
+#startButton:active {
+  transform: scale(1.02);
+  box-shadow: 0 4px 10px rgba(0, 123, 255, 0.3);
+}

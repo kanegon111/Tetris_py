@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>テトリス (Python版)</title>
+    <!-- PyScript (Pyodide) のロード -->
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
+    <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
+    <!-- 元のスタイルシート（PyScriptのCSSより後に読み込むことで競合を回避） -->
+    <link rel="stylesheet" href="テトリス.css">
+    <style>
+        /* PyScript固有要素が余計な隙間を作らないように非表示化 */
+        py-script,
+        py-config,
+        script[type="py"] {
+            display: none !important;
+        }
+
+        /* モバイルおよびPCのレスポンシブ画面中央揃え */
+        body, html {
+            margin: 0 !important;
+            padding: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
+            align-items: center !important;
+            min-height: 100vh !important;
+            height: 100vh !important;
+            background-color: #000 !important;
+            overflow: hidden !important;
+            box-sizing: border-box !important;
+            border: none !important; /* ボディ枠線を削除してキャンバス枠線に移行 */
+        }
+
+        /* スタートボタンの重ね合わせ設定 */
+        #startContainer {
+            position: absolute !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            z-index: 10;
+        }
+
+        /* スマホ用コントローラーボタンのグラスモルフィズムデザイン */
+        .ctrl-btn {
+            background: rgba(255, 255, 255, 0.12) !important;
+            border: 1px solid rgba(255, 255, 255, 0.25) !important;
+            border-radius: 12px !important;
+            color: #fff !important;
+            font-size: 16px !important;
+            font-family: 'Impact', sans-serif;
+            font-weight: bold;
+            padding: 14px 0 !important;
+            flex: 1;
+            text-align: center;
+            cursor: pointer;
+            user-select: none;
+            touch-action: manipulation;
+            transition: all 0.1s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        }
+        .ctrl-btn:active {
+            background: rgba(255, 255, 255, 0.3) !important;
+            transform: scale(0.95);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ゲーム全体を縦に並べるコンテナ -->
+    <div id="gameWrapper" style="display: flex; flex-direction: column; align-items: center; gap: 12px; z-index: 1; max-height: 98vh;">
+        
+        <!-- プレイ画面とスタートボタンを重ねて配置する相対コンテナ -->
+        <div style="position: relative; width: 316px; height: 616px; display: flex; justify-content: center; align-items: center;">
+            <!-- キャンバス本体を赤い太枠線（border）のラッパーで囲み、4辺すべてが確実に描画されるように調整 -->
+            <div style="border: rgb(194, 35, 35) 8px solid; border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); display: inline-block; line-height: 0; box-sizing: border-box;">
+                <canvas id="can" width="300" height="600" style="display: block;"></canvas>
+            </div>
+
+            <div id="startContainer">
+                <button id="startButton">Start Game</button>
+            </div>
+        </div>
+
+        <!-- スマホ用バーチャルコントローラー（タップ回転のためROTATEボタンを削除） -->
+        <div id="mobileController" style="display: flex; justify-content: space-between; width: 300px; gap: 10px; margin-top: 6px;">
+            <button id="btnLeft" class="ctrl-btn">◀</button>
+            <button id="btnDown" class="ctrl-btn">▼</button>
+            <button id="btnRight" class="ctrl-btn">▶</button>
+        </div>
+    </div>
+
+    <img id="bgImage" src="テトリス.jpg" style="position: absolute;top: 0;left: 0;z-index: -1;width: 100%; height: 100%;">
+    <audio id="lineC" src="seq-0603.mp3"></audio>
+    <audio id="bgm"></audio>
+
+    <!-- Pythonコード -->
+    <script type="py">
+import random
+import math
+import time
+from pyscript import document, window
+from pyodide.ffi import create_proxy
+
+# 落ちるスピード
+GAME_SPEED = 500
+
+# フィールドサイズ
+FIELD_COL = 10
+FIELD_ROW = 20
+
+# ブロック一つのサイズ(ピクセル)
+BLOCK_SIZE = 30
+
+# スクリーンサイズ
+SCREEN_W = BLOCK_SIZE * FIELD_COL
+SCREEN_H = BLOCK_SIZE * FIELD_ROW
+
+# 星空背景用の星のデータを事前生成
+STARS_COUNT = 45
+stars = []
+for _ in range(STARS_COUNT):
+    stars.append({
+        'x': random.uniform(0, SCREEN_W),
+        'y': random.uniform(0, SCREEN_H),
+        'size': random.uniform(0.5, 1.8),
+        'alpha_base': random.uniform(0.3, 0.8),
+        'phase': random.uniform(0, 2 * math.pi)
+    })
+
+# テトロミノのサイズ
+TETRO_SIZE = 4
+
+TETRO_COLORS = [
+    "#000",         # 0 空
+    "#6CF",         # 1 水色
+    "#F92",         # 2 オレンジ
+    "#66F",         # 3 青
+    "#C5C",         # 4 紫
+    "#FD2",         # 5 黄色
+    "#F44",         # 6 赤
+    "#5B5"          # 7 緑
+]
+
+TETRO_TYPES = [
+    [], # 0. 空っぽ
+    [               # 1. I
+        [0, 0, 0, 0],
+        [1, 1, 1, 1],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0]
+    ],
+    [               # 2. L
+        [0, 1, 0, 0],
+        [0, 1, 0, 0],
+        [0, 1, 1, 0],
+        [0, 0, 0, 0]
+    ],
+    [               # 3. J
+        [0, 0, 1, 0],
+        [0, 0, 1, 0],
+        [0, 1, 1, 0],
+        [0, 0, 0, 0]
+    ],
+    [               # 4. T
+        [0, 1, 0, 0],
+        [0, 1, 1, 0],
+        [0, 1, 0, 0],
+        [0, 0, 0, 0]
+    ],
+    [               # 5. O
+        [0, 0, 0, 0],
+        [0, 1, 1, 0],
+        [0, 1, 1, 0],
+        [0, 0, 0, 0]
+    ],
+    [               # 6. Z
+        [0, 0, 0, 0],
+        [1, 1, 0, 0],
+        [0, 1, 1, 0],
+        [0, 0, 0, 0]
+    ],
+    [               # 7. S
+        [0, 0, 0, 0],
+        [0, 1, 1, 0],
+        [1, 1, 0, 0],
+        [0, 0, 0, 0]
+    ]
+]
+
+# 初期位置
+START_X = FIELD_COL // 2 - TETRO_SIZE // 2
+START_Y = 0
+
+audio = document.getElementById("bgm")
+lineCAudio = document.getElementById("lineC")
+
+# BGMプレイリストと再生中の曲インデックス
+BGM_FILES = ["bgm1.mp3", "bgm2.mp3", "bgm3.mp3", "bgm4.mp3"]
+current_bgm_index = 0
+
+def playBGM():
+    global current_bgm_index
+    audio.src = BGM_FILES[current_bgm_index]
+    audio.volume = 0.3
+    audio.play()
+
+def handleBGMEnded(e):
+    global current_bgm_index
+    # 最後の曲が終わったら最初の曲に戻るように次のインデックスを決定
+    current_bgm_index = (current_bgm_index + 1) % len(BGM_FILES)
+    playBGM()
+
+# テトロミノ本体と形番号
+tetro = None
+tetro_t = 0
+
+# テトロミノの座標
+tetro_x = START_X
+tetro_y = START_Y
+
+# フィールド本体
+field = [[0 for _ in range(FIELD_COL)] for _ in range(FIELD_ROW)]
+
+# ゲームオーバーフラグ
+over = False
+
+can = document.getElementById("can")
+con = can.getContext("2d")
+
+can.width = SCREEN_W
+can.height = SCREEN_H
+
+level = 1
+gameSpeed = GAME_SPEED
+dropInterval = None
+
+# プロキシ参照を保持（ガベージコレクション防止）
+drop_proxy_ref = None
+
+def startGame(event=None):
+    global tetro, tetro_t, tetro_x, tetro_y, dropInterval, over, level, gameSpeed, drop_proxy_ref, current_bgm_index
+    
+    over = False
+    level = 1
+    gameSpeed = GAME_SPEED
+    
+    # BGMをプレイリストの最初の曲から再生開始
+    current_bgm_index = 0
+    playBGM()
+    
+    # フィールドの初期化
+    init()
+    
+    tetro_t = random.randint(1, len(TETRO_TYPES) - 1)
+    tetro = TETRO_TYPES[tetro_t]
+    tetro_x = START_X
+    tetro_y = START_Y
+    
+    drawAll()
+    
+    if dropInterval is not None:
+        window.clearInterval(dropInterval)
+    
+    drop_proxy_ref = create_proxy(dropTetro)
+    dropInterval = window.setInterval(drop_proxy_ref, gameSpeed)
+
+def init():
+    global field
+    document.getElementById("startContainer").style.display = "none"
+    field = []
+    for y in range(FIELD_ROW):
+        row = [0] * FIELD_COL
+        field.append(row)
+
+def drawBlock(x, y, c):
+    px = x * BLOCK_SIZE
+    py = y * BLOCK_SIZE
+    color = TETRO_COLORS[c]
+    
+    # メインのブロック面を描画
+    con.fillStyle = color
+    con.fillRect(px, py, BLOCK_SIZE, BLOCK_SIZE)
+    
+    # --- 3D立体感を出すベベル（面取り）処理 ---
+    
+    # 1. 光が当たる面 (上辺と左辺を明るい白色半透明で重ねる)
+    con.fillStyle = "rgba(255, 255, 255, 0.35)"
+    # 上辺の台形
+    con.beginPath()
+    con.moveTo(px, py)
+    con.lineTo(px + BLOCK_SIZE, py)
+    con.lineTo(px + BLOCK_SIZE - 4, py + 4)
+    con.lineTo(px + 4, py + 4)
+    con.closePath()
+    con.fill()
+    
+    # 左辺の台形
+    con.beginPath()
+    con.moveTo(px, py)
+    con.lineTo(px, py + BLOCK_SIZE)
+    con.lineTo(px + 4, py + BLOCK_SIZE - 4)
+    con.lineTo(px + 4, py + 4)
+    con.closePath()
+    con.fill()
+    
+    # 2. 影になる面 (下辺と右辺を黒色半透明で重ねる)
+    con.fillStyle = "rgba(0, 0, 0, 0.4)"
+    # 下辺の台形
+    con.beginPath()
+    con.moveTo(px, py + BLOCK_SIZE)
+    con.lineTo(px + BLOCK_SIZE, py + BLOCK_SIZE)
+    con.lineTo(px + BLOCK_SIZE - 4, py + BLOCK_SIZE - 4)
+    con.lineTo(px + 4, py + BLOCK_SIZE - 4)
+    con.closePath()
+    con.fill()
+    
+    # 右辺の台形
+    con.beginPath()
+    con.moveTo(px + BLOCK_SIZE, py)
+    con.lineTo(px + BLOCK_SIZE, py + BLOCK_SIZE)
+    con.lineTo(px + BLOCK_SIZE - 4, py + BLOCK_SIZE - 4)
+    con.lineTo(px + BLOCK_SIZE - 4, py + 4)
+    con.closePath()
+    con.fill()
+    
+    # 3. 境界線を少しソフトにして質感向上
+    con.strokeStyle = "rgba(0, 0, 0, 0.15)"
+    con.strokeRect(px + 4, py + 4, BLOCK_SIZE - 8, BLOCK_SIZE - 8)
+    
+    # 4. 外枠線を描画してブロックの形を引き締める
+    con.strokeStyle = "rgba(0, 0, 0, 0.25)"
+    con.strokeRect(px, py, BLOCK_SIZE, BLOCK_SIZE)
+
+def drawAll():
+    con.clearRect(0, 0, SCREEN_W, SCREEN_H)
+    
+    # 宇宙空間の半透明な暗闇を描画
+    con.fillStyle = "rgba(10, 10, 26, 0.82)"
+    con.fillRect(0, 0, SCREEN_W, SCREEN_H)
+    
+    # 星空の描画 (サイン波による瞬きアニメーション)
+    current_time = time.time()
+    for star in stars:
+        twinkle = 0.25 * math.sin(current_time * 3 + star['phase'])
+        alpha = max(0.1, min(1.0, star['alpha_base'] + twinkle))
+        
+        con.fillStyle = f"rgba(255, 255, 255, {alpha})"
+        con.beginPath()
+        con.arc(star['x'], star['y'], star['size'], 0, 2 * math.pi)
+        con.fill()
+        
+    # テトリス盤面のグリッド線（うっすらと見えるガイド線を描画してプレイしやすく）
+    con.strokeStyle = "rgba(255, 255, 255, 0.04)"
+    con.lineWidth = 1
+    for x in range(FIELD_COL + 1):
+        con.beginPath()
+        con.moveTo(x * BLOCK_SIZE, 0)
+        con.lineTo(x * BLOCK_SIZE, SCREEN_H)
+        con.stroke()
+    for y in range(FIELD_ROW + 1):
+        con.beginPath()
+        con.moveTo(0, y * BLOCK_SIZE)
+        con.lineTo(SCREEN_W, y * BLOCK_SIZE)
+        con.stroke()
+    
+    for y in range(FIELD_ROW):
+        for x in range(FIELD_COL):
+            if field[y][x]:
+                drawBlock(x, y, field[y][x])
+                
+    if tetro is not None:
+        for y in range(TETRO_SIZE):
+            for x in range(TETRO_SIZE):
+                if tetro[y][x]:
+                    drawBlock(tetro_x + x, tetro_y + y, tetro_t)
+                    
+    if over:
+        s = "GAME OVER"
+        con.font = "40px 'ＭＳ ゴシック'"
+        w = con.measureText(s).width
+        x_pos = SCREEN_W / 2 - w / 2
+        y_pos = SCREEN_H / 2 - 20
+        con.lineWidth = 4
+        con.strokeText(s, x_pos, y_pos)
+        con.fillStyle = "white"
+        con.fillText(s, x_pos, y_pos)
+        
+    con.font = "20px 'ＭＳ ゴシック'"
+    con.fillStyle = "white"
+    con.fillText(f"LEVEL:{level}", 10, 25)
+
+def checkMove(mx, my, ntetro=None):
+    if ntetro is None:
+        ntetro = tetro
+        
+    for y in range(TETRO_SIZE):
+        for x in range(TETRO_SIZE):
+            if ntetro[y][x]:
+                nx = tetro_x + mx + x
+                ny = tetro_y + my + y
+                
+                if (ny < 0 or
+                    nx < 0 or
+                    ny >= FIELD_ROW or
+                    nx >= FIELD_COL or
+                    field[ny][nx]):
+                    return False
+    return True
+
+def dropTetro():
+    global tetro, tetro_t, tetro_x, tetro_y, over, dropInterval
+    if over:
+        return
+    if checkMove(0, 1):
+        tetro_y += 1
+    else:
+        fixTetro()
+        checkLine()
+        tetro_t = random.randint(1, len(TETRO_TYPES) - 1)
+        tetro = TETRO_TYPES[tetro_t]
+        tetro_x = START_X
+        tetro_y = START_Y
+        
+        if not checkMove(0, 0):
+            over = True
+            if dropInterval is not None:
+                window.clearInterval(dropInterval)
+                dropInterval = None
+            
+            # ゲームオーバー時にボタンを「Restart」にして再表示する
+            start_btn = document.getElementById("startButton")
+            start_btn.innerText = "Restart"
+            document.getElementById("startContainer").style.display = "block"
+                
+    drawAll()
+
+def fixTetro():
+    for y in range(TETRO_SIZE):
+        for x in range(TETRO_SIZE):
+            if tetro[y][x]:
+                field[tetro_y + y][tetro_x + x] = tetro_t
+
+def checkLine():
+    global level, gameSpeed, dropInterval, drop_proxy_ref
+    linec = 0
+    for y in range(FIELD_ROW):
+        flag = True
+        for x in range(FIELD_COL):
+            if not field[y][x]:
+                flag = False
+                break
+        if flag:
+            linec += 1
+            for ny in range(y, 0, -1):
+                for nx in range(FIELD_COL):
+                    field[ny][nx] = field[ny - 1][nx]
+            # 最上段の行をクリア
+            for nx in range(FIELD_COL):
+                field[0][nx] = 0
+            lineCAudio.play()
+            
+    if linec > 0:
+        level += 1
+        gameSpeed = max(100, GAME_SPEED - (level * 20))
+        if dropInterval is not None:
+            window.clearInterval(dropInterval)
+        drop_proxy_ref = create_proxy(dropTetro)
+        dropInterval = window.setInterval(drop_proxy_ref, gameSpeed)
+
+def onKeyDown(e):
+    global tetro, tetro_x, tetro_y
+    if over:
+        return
+        
+    kc = e.keyCode
+    if kc == 37: # 左
+        if checkMove(-1, 0):
+            tetro_x -= 1
+    elif kc == 39: # 右
+        if checkMove(1, 0):
+            tetro_x += 1
+    elif kc == 40: # 下
+        if checkMove(0, 1):
+            tetro_y += 1
+    elif kc == 32: # スペース
+        ntetro = rotate()
+        if checkMove(0, 0, ntetro):
+            tetro = ntetro
+            
+    drawAll()
+
+def rotate():
+    ntetro = [[0 for _ in range(TETRO_SIZE)] for _ in range(TETRO_SIZE)]
+    for y in range(TETRO_SIZE):
+        for x in range(TETRO_SIZE):
+            ntetro[y][x] = tetro[TETRO_SIZE - x - 1][y]
+    return ntetro
+
+render_proxy = None
+
+def render_loop(timestamp=0):
+    drawAll()
+    window.requestAnimationFrame(render_proxy)
+
+# イベントハンドラーの登録
+def setup():
+    global render_proxy
+    # キーボードイベント
+    keydown_proxy = create_proxy(onKeyDown)
+    document.addEventListener("keydown", keydown_proxy)
+    
+    # スタートボタンのクリックイベント
+    start_btn = document.getElementById("startButton")
+    start_proxy = create_proxy(startGame)
+    start_btn.addEventListener("click", start_proxy)
+    
+    # スマホ用ボタンのクリック/タップイベント
+    def clickLeft(e):
+        global tetro_x
+        if not over and checkMove(-1, 0):
+            tetro_x -= 1
+            
+    def clickRight(e):
+        global tetro_x
+        if not over and checkMove(1, 0):
+            tetro_x += 1
+            
+    def clickDown(e):
+        global tetro_y
+        if not over and checkMove(0, 1):
+            tetro_y += 1
+            
+    def clickCanvas(e):
+        global tetro
+        if not over and tetro is not None:
+            ntetro = rotate()
+            if checkMove(0, 0, ntetro):
+                tetro = ntetro
+                
+    document.getElementById("btnLeft").addEventListener("click", create_proxy(clickLeft))
+    document.getElementById("btnRight").addEventListener("click", create_proxy(clickRight))
+    document.getElementById("btnDown").addEventListener("click", create_proxy(clickDown))
+    document.getElementById("can").addEventListener("click", create_proxy(clickCanvas))
+    
+    # BGM再生が終了したときのイベント登録（連続再生用）
+    bgm_ended_proxy = create_proxy(handleBGMEnded)
+    audio.addEventListener("ended", bgm_ended_proxy)
+    
+    # 60FPSレンダーループの開始（星空アニメーション）
+    render_proxy = create_proxy(render_loop)
+    window.requestAnimationFrame(render_proxy)
+
+setup()
+    </script>
+</body>
+
+</html>
